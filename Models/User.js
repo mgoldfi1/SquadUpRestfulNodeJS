@@ -25,6 +25,12 @@ const userSchema = new Schema(
       required: false,
       default: false,
     },
+    favoritedGames: [
+      {
+        type: Schema.Types.ObjectId,
+        ref: "Game",
+      },
+    ],
     friends: [
       {
         type: Schema.Types.ObjectId,
@@ -33,7 +39,11 @@ const userSchema = new Schema(
           type: Boolean,
           default: true,
         },
+        required: false,
       },
+    ],
+    listings: [
+      { type: Schema.Types.ObjectId, ref: "Listing", required: false },
     ],
   },
   { timestamps: true }

@@ -93,7 +93,7 @@ router.post("/login", jsonParser, async (req, res) => {
       });
     }
   } catch (err) {
-    console.log(err);
+    console.log("ABCSED", err);
   }
 });
 

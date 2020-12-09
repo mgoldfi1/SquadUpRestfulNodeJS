@@ -1,14 +1,14 @@
-//Dependencies
+//*Dependencies
 var express = require("express");
 var router = express.Router();
 var bodyParser = require("body-parser");
 var jsonParser = bodyParser.json();
 var jwt = require("jsonwebtoken");
 
-//Verify token -> Call before each function that requires authorization
+//*Verify token -> Call before each function that requires authorization
 const verifyJWT = (token) => {
   try {
-    let decoded = jwt.verify(token, "whatsgoodmotherfucker");
+    let decoded = jwt.verify(token, process.env.JWT_SECRET);
     return decoded;
   } catch (error) {
     console.log("Err:", error);
@@ -16,11 +16,12 @@ const verifyJWT = (token) => {
   }
 };
 
-//Models
+//*Models
 const Game = require("../Models/Game");
 const Listing = require("../Models/Listing");
+const User = require("../Models/User");
 
-//Image processing for game photo uploads
+//*Image processing for game photo uploads
 var multer = require("multer");
 const storage = multer.diskStorage({
   destination: function (req, file, callback) {
@@ -34,9 +35,9 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage: storage });
 
-//Controller
+//*Controller
 
-//Should not be public, used to add game via postman to mongodb
+//*Should not be public, used to add game via postman to mongodb
 
 router.post("/addGame", upload.single("image"), async function (req, res) {
   try {
@@ -51,7 +52,7 @@ router.post("/addGame", upload.single("image"), async function (req, res) {
   }
 });
 
-// Retrieve all games
+//* Retrieve all games
 
 router.get("/all", jsonParser, async function (req, res) {
   try {
@@ -59,7 +60,10 @@ router.get("/all", jsonParser, async function (req, res) {
     const verified = verifyJWT(token);
     if (verified) {
       try {
-        const allGames = await Game.find({}, { players: 0, __v: 0 });
+        const allGames = await Game.find(
+          {},
+          { players: 0, __v: 0, listings: 0 }
+        );
         res.status(200).json({ status: "OK", games: allGames });
       } catch (error) {
         console.log(error);
@@ -75,9 +79,9 @@ router.get("/all", jsonParser, async function (req, res) {
   }
 });
 
-//Retrieve all listings for a specified game ID
+//*Retrieve all listings for a specified game ID
 
-router.get("/listings", jsonParser, async function (req, res) {
+router.post("/listings", jsonParser, async function (req, res) {
   try {
     const gameId = req.body._id;
     console.log(req.body);
@@ -88,7 +92,9 @@ router.get("/listings", jsonParser, async function (req, res) {
     const verified = verifyJWT(token);
     if (verified) {
       try {
-        const listings = await Listing.find({ game: gameId });
+        const listings = await Listing.find({ game: gameId })
+          .populate("author", "_id email")
+          .populate("game", "_id name");
         res.status(200).json({ status: "OK", listings });
       } catch (error) {
         console.log(error);
@@ -105,24 +111,83 @@ router.get("/listings", jsonParser, async function (req, res) {
   }
 });
 
-//Create a new listing in the database for a specific game and user
+//*Create a new listing in the database for a specific game and user
 
 router.post("/listing/new", jsonParser, async function (req, res) {
   try {
     const formData = req.body;
-
     const token = req.headers.authorization.split(" ")[1];
     const verified = verifyJWT(token);
     if (verified) {
       try {
         const listing = new Listing(formData);
         const savedListing = await listing.save();
+        const user = await User.findById(formData.author);
+        const game = await Game.findById(formData.game);
+        if (game && user) {
+          user.listings.push(savedListing._id);
+          await user.save();
+          game.listingCount.open += 1;
+          await game.save();
+        }
 
         res.status(200).json({ status: "OK", listing });
       } catch (error) {
         console.log(error);
 
         res.status(400).json({ status: "Error", message: "Invalid listing" });
+      }
+    } else {
+      res.status(403).json({ status: "Error", message: "Invalid token" });
+    }
+  } catch (error) {
+    console.log(error);
+    res.status(403).json({ status: "Error", message: "Invalid token" });
+  }
+});
+
+//* Add game to user's favorite games list and increment player count on game
+
+router.post("/favoriteGame", jsonParser, async function (req, res) {
+  try {
+    const formData = req.body;
+    const token = req.headers.authorization.split(" ")[1];
+    const verified = verifyJWT(token);
+    if (verified) {
+      try {
+        const user = await User.findById(formData.userId);
+        const game = await Game.findById(formData.gameId);
+        if (game && user) {
+          if (
+            !user.favoritedGames.find(
+              (listItem) => listItem.toString() === game._id.toString()
+            )
+          ) {
+            user.favoritedGames.push(game._id);
+            await user.save();
+            game.playerCount += 1;
+            await game.save();
+            res
+              .status(200)
+              .json({ status: "OK", message: "Added to favorites" });
+          } else {
+            user.favoritedGames = user.favoritedGames.filter(
+              (item) => item.toString() != game._id.toString()
+            );
+            await user.save();
+            game.playerCount -= 1;
+            game.save();
+            res
+              .status(200)
+              .json({ status: "OK", message: "Removed from favorites" });
+          }
+        } else {
+          throw "Error";
+        }
+      } catch (error) {
+        console.log(error);
+
+        res.status(400).json({ status: "Error", message: "Invalid request" });
       }
     } else {
       res.status(403).json({ status: "Error", message: "Invalid token" });
