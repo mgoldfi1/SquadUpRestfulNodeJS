@@ -120,18 +120,24 @@ router.post("/listing/new", jsonParser, async function (req, res) {
     const verified = verifyJWT(token);
     if (verified) {
       try {
+        formData.author = verified._id;
         const listing = new Listing(formData);
         const savedListing = await listing.save();
         const user = await User.findById(formData.author);
         const game = await Game.findById(formData.game);
+
         if (game && user) {
           user.listings.push(savedListing._id);
           await user.save();
           game.listingCount.open += 1;
           await game.save();
+          console.log(user, game);
         }
 
-        res.status(200).json({ status: "OK", listing });
+        const queriedListing = await Listing.findById(savedListing._id)
+          .populate("author", "_id email")
+          .populate("game", "_id name");
+        res.status(200).json({ status: "OK", listing: queriedListing });
       } catch (error) {
         console.log(error);
 
@@ -155,8 +161,9 @@ router.post("/favoriteGame", jsonParser, async function (req, res) {
     const verified = verifyJWT(token);
     if (verified) {
       try {
-        const user = await User.findById(formData.userId);
-        const game = await Game.findById(formData.gameId);
+        const user = await User.findById(verified._id);
+        const game = await Game.findById(formData._id);
+        console.log(user, game);
         if (game && user) {
           if (
             !user.favoritedGames.find(
